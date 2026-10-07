@@ -21,6 +21,41 @@ CapitalIntel Graph Agent automates complex market and investment research by que
 
 ---
 
+## Architecture
+
+The application uses Google Agent Development Kit (ADK) to expose a root orchestrator and three specialized agents. The root agent is exported as `root_agent` and is named `investment_agent`; it delegates graph questions to the specialist agents and can return combined results, including tables or charts when requested.
+
+```mermaid
+flowchart TB
+   UI[ADK Web UI<br/>http://127.0.0.1:8000] --> ROOT[Root orchestrator<br/>root_agent / investment_agent]
+   ROOT --> INV[Investor research agent<br/>Investor lookup]
+   ROOT --> RES[Investment research agent<br/>Company and news research]
+   ROOT --> GRAPH[Graph database agent<br/>Structural Cypher queries]
+   INV --> NEO[Neo4j query layer<br/>Python driver, read queries, schema, serialization]
+   GRAPH --> NEO
+   RES -. Optional external tools .-> MCP[MCP Toolbox<br/>SSE endpoint]
+   MCP --> NEO
+   NEO --> DB[(Neo4j knowledge graph)]
+```
+
+### Agents and data layer
+
+- **Root orchestrator:** Routes requests to the specialist sub-agents and coordinates their responses. It can present retrieved information as tables, charts, or natural-language answers.
+- **Investor research agent:** Looks up investors for a specified organization using the Neo4j-backed `get_investors` function.
+- **Investment research agent:** Uses the tools loaded from the optional MCP Toolbox endpoint for company, industry, and article research. The project's `tools.yaml` template includes examples such as company full-text search, articles by month, article details, and people associated with a company.
+- **Graph database agent:** Inspects the graph schema and generates structural read-only Cypher queries using the Neo4j Python driver. The query layer serializes Neo4j values for agent responses and rejects write queries.
+- **Knowledge graph:** The documented labels include `Organization`, `Person`, `Article`, and `IndustryCategory`. Relationships include `HAS_INVESTOR`, `HAS_CEO`, `HAS_BOARD_MEMBER`, `HAS_CATEGORY`, `MENTIONS`, and `HAS_SUBSIDIARY`. The configured database determines the actual schema and data volume; the source currently notes approximately 237,358 nodes for its example dataset.
+
+### MCP Toolbox and web search
+
+This project does **not** implement a built-in public-web search tool. It can load tools from an external Model Context Protocol (MCP) server over Server-Sent Events (SSE), configured with `MCP_TOOLBOX_URL` in `.env`. When configured and reachable, the investment research agent receives the server's tools, plus the local schema-inspection tool. MCP servers may provide web search, but that capability depends on the external server and its configuration; it is not supplied by this repository itself.
+
+If `MCP_TOOLBOX_URL` is unset, the investment research agent is initialized with only the local schema tool, so its MCP-provided company and article tools are unavailable. Neo4j access for the investor and graph database agents is provided directly by the Python driver, independently of MCP.
+
+To configure the external tools, set up an MCP Toolbox server, configure its Neo4j source and tools (see `investment_agent/.adk/tools.yaml.template` and `setup_tools_yaml.py`), then set `MCP_TOOLBOX_URL` to the server's SSE endpoint. Keep database credentials and endpoint details in `.env`, not in committed files.
+
+---
+
 ## Repository Structure
 
 ```
